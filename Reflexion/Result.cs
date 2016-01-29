@@ -1,6 +1,1 @@
-﻿namespace Reflex
-{
-    class Result
-    {
-    }
-}
+﻿

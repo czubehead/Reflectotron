@@ -6,7 +6,9 @@ namespace Reflex
     {
         static void Main(string[] args)
         {
-            TestClass tc=new TestClass {PubVirtProp = 0};
+            int x, y = 0;
+
+            TestClass tc=new TestClass(string.Empty, out x, ref y);
 
             Reflectotron reflectotron=new Reflectotron(tc);
             Console.WriteLine(reflectotron.Info);

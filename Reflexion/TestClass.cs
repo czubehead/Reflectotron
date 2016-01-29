@@ -1,4 +1,5 @@
 ﻿using System;
+using System.CodeDom;
 using System.Xml.Serialization;
 
 namespace Reflex
@@ -22,7 +23,18 @@ namespace Reflex
         protected string ProtProp { get; set; }
 
         public override DateTime PubAbstProp { get; set; }
-        
+
+        public TestClass(string normal,out int out_int,ref int ref_int,string opt="empty")
+        {
+            out_int = 0;
+        }
+        public TestClass() { }
+
+        public void TestMethod(string normal, out int out_int, ref int ref_int, string opt = "empty")
+        {
+            out_int = 0;
+        }
+
         public void PubVoidMeth() { }
         private void PivVoidMeth() { }
         public int PubIntMeth_noparam()
@@ -48,6 +60,33 @@ namespace Reflex
         public object Clone()
         {
             return this;
+        }
+
+        public static TestClass operator +(TestClass a, TestClass b)
+        {
+            return a;
+        }
+        public static TestClass operator -(TestClass a, TestClass b)
+        {
+            return a;
+        }
+        public static TestClass operator *(TestClass a, TestClass b)
+        {
+            return a;
+        }
+        public static TestClass operator /(TestClass a, TestClass b)
+        {
+            return a;
+        }
+
+        public static implicit operator string(TestClass tc)
+        {
+            return "";
+        }
+
+        public static implicit operator TestClass(string s)
+        {
+            return new TestClass();
         }
     }
 }

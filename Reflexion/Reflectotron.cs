@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Reflection;
 using System.Text;
@@ -8,7 +9,7 @@ namespace Reflex
 {
     public class Reflectotron
     {
-        public enum EAccMods
+        public enum EKeyWords
         {
             Public,
             Private,
@@ -18,11 +19,15 @@ namespace Reflex
             Abstract,
             Static,
             Readonly,
-            Override
+            Override,
+            Sealed,
+            Operator,
+            Implicit,
+            Explicit
         }
 
         private const BindingFlags AllBindingFlags = BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public |
-                                             BindingFlags.Static|BindingFlags.DeclaredOnly;
+                                             BindingFlags.Static | BindingFlags.DeclaredOnly;
 
         public string Info { get; }
 
@@ -33,13 +38,16 @@ namespace Reflex
             var clMgr = new ClassManager(T.Namespace);//manages class names and namespaces
             List<string> properties = new List<string>();
 
+
             sb.AppendLine($"namespace {T.Namespace}");
             sb.AppendLine("{");
 
-            Attributes attributes = new Attributes(T.GetCustomAttributes(), clMgr, 2);
-            sb.Append(attributes);
+            Attributes classAttributes = new Attributes(T.GetCustomAttributes(), clMgr, 2);
+            sb.Append(classAttributes);
 
-            sb.Append($"  class {T.Name}");
+            var classMods = new AccessModifiers(T);
+
+            sb.Append($" {classMods}class {T.Name}");
             #region inheritance
 
             bool inherits = false;
@@ -62,7 +70,6 @@ namespace Reflex
                         sb.Append(", ");
                 }
             }
-
             #endregion
 
             sb.AppendLine();
@@ -70,6 +77,7 @@ namespace Reflex
 
             #region properties
 
+            sb.AppendLine("#region properties");
             foreach (var property in T.GetProperties(AllBindingFlags))
             {
                 Attributes attrs = new Attributes(property.GetCustomAttributes(), clMgr, 4);
@@ -91,16 +99,16 @@ namespace Reflex
 
                 if (getterMods.IsPublic && setterMods.IsPrivate)
                 {
-                    commonModifiers.Add(EAccMods.Public);
-                    getterMods.Remove(EAccMods.Public);
+                    commonModifiers.Add(EKeyWords.Public);
+                    getterMods.Remove(EKeyWords.Public);
                 }
                 else if (setterMods.IsPublic && getterMods.IsPrivate)//who uses this anyway?
                 {
-                    commonModifiers.Add(EAccMods.Public);
-                    setterMods.Remove(EAccMods.Public);
+                    commonModifiers.Add(EKeyWords.Public);
+                    setterMods.Remove(EKeyWords.Public);
                 }
 
-                sb.Append(commonModifiers + clMgr.Write(property.PropertyType) + " " + property.Name + " { ");
+                sb.Append($"{commonModifiers}{clMgr.Write(property.PropertyType)} {property.Name} {{ ");
                 if (property.CanRead)
                 {
                     sb.Append(getterMods + "get; ");
@@ -125,6 +133,7 @@ namespace Reflex
                 properties.Add(property.Name);
                 sb.AppendLine();
             }
+            sb.AppendLine("#endregion");
 
             #endregion
 
@@ -132,6 +141,7 @@ namespace Reflex
 
             #region fields
 
+            sb.AppendLine("#region fields");
             foreach (var field in T.GetFields(AllBindingFlags))
             {
                 string name = field.Name;
@@ -145,49 +155,95 @@ namespace Reflex
 
                 sb.Append("    ");
                 AccessModifiers mods = new AccessModifiers(field);
-                sb.Append($"{mods} {clMgr.Write(field.FieldType)} {field.Name}");
+                sb.Append($"{mods}{clMgr.Write(field.FieldType)} {field.Name}");
                 if (field.FieldType.IsPrimitive)
                 {
-                    var val = mods.Contains(EAccMods.Static) ?
+                    var val = mods.Contains(EKeyWords.Static) ?
                         field.GetValue(null).ToString() : field.GetValue(obj).ToString();
 
                     sb.Append($" = {val}");
                 }
                 sb.AppendLine(";");
             }
+            sb.AppendLine("#endregion");
             #endregion
 
             sb.AppendLine();
+
+            #region constructors
+
+            sb.AppendLine("#region constructors");
+            foreach (var constructor in T.GetConstructors(AllBindingFlags))
+            {
+                var mods = new AccessModifiers(constructor);
+                sb.AppendLine($"    {mods}{T.Name}({ProcessParameters(constructor.GetParameters(), clMgr)}){{}}");
+            }
+            sb.AppendLine("#endregion");
+            #endregion
+
             sb.AppendLine();
 
             #region methods
 
+            sb.AppendLine("#region methods");
             foreach (var method in T.GetMethods(AllBindingFlags))
             {
-                if ((T.BaseType != null) && T.BaseType.GetMethods(AllBindingFlags).Contains(method))//no inherited methods
-                    continue;
-
-                if (properties.Any(p => method.Name == $"get_{p}")) //auto-getters                
-                    continue;
-                if (properties.Any(p => method.Name == $"set_{p}"))
-                    continue;
-
                 AccessModifiers mods = new AccessModifiers(method);
+                string name = method.Name;//name to be used. is edited for the advanced stuff
+
+                if (method.IsSpecialName)
+                {
+                    if (properties.Any(p => method.Name == $"get_{p}")) //auto-getters                
+                        continue;
+                    if (properties.Any(p => method.Name == $"set_{p}"))
+                        continue;
+
+                    #region less common stuff
+
+                    if (method.Name.IndexOf("op_", StringComparison.Ordinal) == 0)//operators
+                    {
+                        string tempName = method.Name.Remove(0, 3);
+                        switch (tempName)
+                        {
+                            case "Implicit":
+                                name = "";
+                                mods.Add(EKeyWords.Implicit);
+                                mods.Add(EKeyWords.Operator);
+                                break;
+                            case "Addition":
+                                name = "operator + ";
+                                break;
+                            case "Subtraction":
+                                name = "operator - ";
+                                break;
+                            case "Multiply":
+                                name = "operator * ";
+                                break;
+                            case "Division":
+                                name = "operator / ";
+                                break;
+                        }
+                    }
+
+                    #endregion
+                }
+
                 if (interfaces.Any())//no virtual keywords for methods implemented by interface
                 {
                     foreach (var @interface in interfaces)
                     {
                         if (@interface.GetMethods().Any(q => MethodsEqual(q, method)))//this method is implemented from inetrface
                         {
-                            mods.Remove(EAccMods.Virtual);
+                            mods.Remove(EKeyWords.Virtual);
                         }
                     }
                 }
 
                 sb.Append("    ");
                 sb.Append(mods);
-                sb.AppendLine($"{clMgr.Write(method.ReturnType)} {method.Name}(){{}}");
+                sb.AppendLine($"{clMgr.Write(method.ReturnType)} {name}({ProcessParameters(method.GetParameters(), clMgr)}){{}}");
             }
+            sb.AppendLine("#endregion");
 
             #endregion
 
@@ -198,6 +254,43 @@ namespace Reflex
             sb.Insert(0, clMgr.Usings + Environment.NewLine);//prepend using directives
 
             Info = sb.ToString();
+        }
+
+        private static string ProcessParameters(IEnumerable<ParameterInfo> parameters, ClassManager mgr)
+        {
+            StringBuilder sb = new StringBuilder();
+
+            for (int i = 0; i < parameters.Count(); i++)
+            {
+                ParameterInfo param = parameters.ElementAt(i);
+                if (param.IsOut)
+                {
+                    sb.Append("out ");
+                }
+                else if (param.ParameterType.IsByRef)
+                {
+                    sb.Append("ref ");
+                }
+
+                sb.Append($"{mgr.Write(param.ParameterType)} {param.Name}");
+                if (param.IsOptional)
+                {
+                    string val = "null";
+                    if (param.ParameterType == typeof(int))
+                    {
+                        val = param.RawDefaultValue.ToString();
+                    }
+                    else if (param.ParameterType == typeof(string))
+                    {
+                        val = "\"" + param.RawDefaultValue + "\"";
+                    }
+                    sb.Append($" = {val}");
+                }
+
+                if (i < parameters.Count() - 1)
+                    sb.Append(", ");
+            }
+            return sb.ToString();
         }
 
         private static bool MethodsEqual(MethodInfo m1, MethodInfo m2)
@@ -223,31 +316,31 @@ namespace Reflex
         }
 
         #region helper classes
-        private class AccessModifiers : List<EAccMods>
+        private class AccessModifiers : List<EKeyWords>
         {
             public AccessModifiers(IEnumerable<MethodInfo> infos)
             {
                 foreach (var info in infos)
                 {
                     if (info.IsPublic)
-                        Add(EAccMods.Public);
+                        Add(EKeyWords.Public);
                     if (info.IsPrivate)
-                        Add(EAccMods.Private);
+                        Add(EKeyWords.Private);
                     if (info.IsAssembly)
-                        Add(EAccMods.Internal);
+                        Add(EKeyWords.Internal);
                     if (info.IsFamily)
-                        Add(EAccMods.Protected);
+                        Add(EKeyWords.Protected);
 
                     if (info.IsStatic)
-                        Add(EAccMods.Static);
+                        Add(EKeyWords.Static);
 
                     if (info.IsAbstract)
-                        Add(EAccMods.Abstract);
+                        Add(EKeyWords.Abstract);
 
                     if (!info.GetBaseDefinition().Equals(info))
-                        Add(EAccMods.Override);
+                        Add(EKeyWords.Override);
                     else if (info.IsVirtual)//it is not both override and virtual
-                        Add(EAccMods.Virtual);
+                        Add(EKeyWords.Virtual);
                 }
             }
             public AccessModifiers(MethodInfo info) : this(new[] { info })
@@ -255,20 +348,57 @@ namespace Reflex
             public AccessModifiers(FieldInfo field)
             {
                 if (field.IsPublic)
-                    Add(EAccMods.Public);
+                    Add(EKeyWords.Public);
                 if (field.IsPrivate)
-                    Add(EAccMods.Private);
+                    Add(EKeyWords.Private);
                 if (field.IsFamily)
-                    Add(EAccMods.Protected);
+                    Add(EKeyWords.Protected);
                 if (field.IsAssembly)
-                    Add(EAccMods.Internal);
+                    Add(EKeyWords.Internal);
 
                 if (field.IsStatic)
-                    Add(EAccMods.Static);
+                    Add(EKeyWords.Static);
                 if (field.IsInitOnly)
-                    Add(EAccMods.Readonly);
+                    Add(EKeyWords.Readonly);
+            }
+            public AccessModifiers(ConstructorInfo info)
+            {
+                if (info.IsPublic)
+                    Add(EKeyWords.Public);
+                if (info.IsPrivate)
+                    Add(EKeyWords.Private);
+                if (info.IsAssembly)
+                    Add(EKeyWords.Internal);
+                if (info.IsFamily)
+                    Add(EKeyWords.Protected);
+
+                if (info.IsStatic)
+                {
+                    Add(EKeyWords.Static);
+                    Remove(EKeyWords.Public);
+                    Remove(EKeyWords.Private);
+                    Remove(EKeyWords.Protected);//static constructors don't have these
+                }
+
+                if (info.IsAbstract)
+                    Add(EKeyWords.Abstract);
+
+                if (info.IsVirtual)
+                    Add(EKeyWords.Virtual);
+            }
+            public AccessModifiers(Type info)
+            {
+                if (info.IsPublic)
+                    Add(EKeyWords.Public);
+                if (info.IsAbstract)
+                    Add(EKeyWords.Abstract);
+                if (info.IsAbstract && info.IsSealed)
+                    Add(EKeyWords.Static);
+                if (info.IsSealed)
+                    Add(EKeyWords.Sealed);
             }
             public AccessModifiers() { }
+
 
             public override string ToString()
             {
@@ -279,8 +409,8 @@ namespace Reflex
                 return res;
             }
 
-            public bool IsPublic => Contains(EAccMods.Public);
-            public bool IsPrivate => Contains(EAccMods.Private);
+            public bool IsPublic => Contains(EKeyWords.Public);
+            public bool IsPrivate => Contains(EKeyWords.Private);
         }
         private class Attributes : List<object>
         {

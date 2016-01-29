@@ -81,6 +81,11 @@ namespace Reflex
         /// <returns></returns>
         private static string Shorten(string shortname)
         {
+            if (shortname.LastIndexOf('&') == shortname.Length - 1)//ref types have & at the end it is not needed
+            {
+                shortname= shortname.Remove(shortname.Length - 1);
+            }
+
             switch (shortname)
             {
                 case "Void":

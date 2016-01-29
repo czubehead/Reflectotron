@@ -7,7 +7,7 @@
         /// </summary>
         /// <param name="mod"></param>
         /// <returns></returns>
-        public static string Str(this Reflectotron.EAccMods mod)
+        public static string Str(this Reflectotron.EKeyWords mod)
         {
             switch (mod)
             {
