@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using System.Text;
 
 namespace Reflex
@@ -23,7 +24,8 @@ namespace Reflex
             Sealed,
             Operator,
             Implicit,
-            Explicit
+            Explicit,
+            Async
         }
 
         private const BindingFlags AllBindingFlags = BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public |
@@ -37,7 +39,6 @@ namespace Reflex
             Type T = obj.GetType();
             var clMgr = new ClassManager(T.Namespace);//manages class names and namespaces
             List<string> properties = new List<string>();
-
 
             sb.AppendLine($"namespace {T.Namespace}");
             sb.AppendLine("{");
@@ -239,6 +240,26 @@ namespace Reflex
                     }
                 }
 
+                #region async methods
+
+                Type asyncAttribType = typeof (AsyncStateMachineAttribute);
+                var asyncAttrib = method.GetCustomAttribute(asyncAttribType) as AsyncStateMachineAttribute;
+                if (asyncAttrib != null)
+                    mods.Add(EKeyWords.Async);
+
+                if ((method.Name.IndexOf('<') == 0) && (method.ReturnType == typeof(int)))//async helper method
+                {
+                    if (
+                        T.GetMethods(BindingFlags.Instance|BindingFlags.NonPublic|BindingFlags.Public)
+                            .Any(m => method.Name.IndexOf(m.Name, StringComparison.Ordinal) == 1))//private int <asyncmethod>__x_()
+                    {
+                        continue;
+                    }
+                }
+
+                #endregion
+
+
                 sb.Append("    ");
                 sb.Append(mods);
                 sb.AppendLine($"{clMgr.Write(method.ReturnType)} {name}({ProcessParameters(method.GetParameters(), clMgr)}){{}}");
@@ -260,9 +281,10 @@ namespace Reflex
         {
             StringBuilder sb = new StringBuilder();
 
-            for (int i = 0; i < parameters.Count(); i++)
+            var parameterInfos = parameters as ParameterInfo[] ?? parameters.ToArray();
+            for (int i = 0; i < parameterInfos.Length; i++)
             {
-                ParameterInfo param = parameters.ElementAt(i);
+                ParameterInfo param = parameterInfos.ElementAt(i);
                 if (param.IsOut)
                 {
                     sb.Append("out ");
@@ -287,13 +309,13 @@ namespace Reflex
                     sb.Append($" = {val}");
                 }
 
-                if (i < parameters.Count() - 1)
+                if (i < parameterInfos.Length - 1)
                     sb.Append(", ");
             }
             return sb.ToString();
         }
 
-        private static bool MethodsEqual(MethodInfo m1, MethodInfo m2)
+        private static bool MethodsEqual(MethodBase m1, MethodBase m2)
         {
             if (m1.Name != m2.Name)
                 return false;

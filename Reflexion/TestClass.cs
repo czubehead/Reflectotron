@@ -1,5 +1,6 @@
 ﻿using System;
 using System.CodeDom;
+using System.Threading.Tasks;
 using System.Xml.Serialization;
 
 namespace Reflex
@@ -87,6 +88,15 @@ namespace Reflex
         public static implicit operator TestClass(string s)
         {
             return new TestClass();
+        }
+
+        //public void PubGENERIC<T>(T paramerter)
+        //{
+            
+        //}
+        public async void PubAsyncVoid()
+        {
+            await Task.Run((() => PrivProp++));
         }
     }
 }
