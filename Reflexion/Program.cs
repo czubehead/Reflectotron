@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Linq;
 
 namespace Reflex
 {
@@ -8,7 +9,7 @@ namespace Reflex
         {
             int x, y = 0;
 
-            TestClass<int,string> tc=new TestClass<int,string>(string.Empty, out x, ref y);
+            TestClass<int> tc=new TestClass<int>();
 
             Reflectotron reflectotron=new Reflectotron(tc);
             Console.WriteLine(reflectotron.Info);

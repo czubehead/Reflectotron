@@ -2,6 +2,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Reflection;
 using System.Runtime.CompilerServices;
@@ -40,6 +41,7 @@ namespace Reflex
 
             StringBuilder sb = new StringBuilder();
             Type T = obj.GetType();
+            
             var clMgr = new ClassManager(T.Namespace);//manages class names and namespaces
             List<string> properties = new List<string>();//properties, used to filter out auto getters and setters from methods
 
@@ -54,37 +56,29 @@ namespace Reflex
             #endregion
 
             var classMods = new AccessModifiers(T);
-            sb.Append($"  {classMods}class {ClassManager.Shorten(T.Name)}");
+            sb.Append($"  {classMods}class {clMgr.Write(T)}");
 
-            #region generics
-
-            if (T.IsGenericType)
-            {
-                var genericArguments = T.GetGenericTypeDefinition()//names of generic arguments for class e.g. for class A<x,y> is "x","y"
-                    .GetGenericArguments().Select(q => q.Name).ToList();
-
-                
-                sb.Append($"<{string.Join(", ", genericArguments)}>");
-            }
-
-            #endregion
+            List<string> genericClassArgs=T.GetGenericTypeDefinition().GetGenericArguments().Select(q=>q.Name).ToList();
+            //list of class's generic arguments
 
             #region inheritance
 
-            bool inherits = false;
-            if ((T.BaseType != null)&&(T.BaseType!=typeof(object)))//inheritance from object class is uselles, don't display
+            List<string> ancestors=new List<string>();
+            
+            if ((T.BaseType != null)&&(T.BaseType!=typeof(object)))//inherits from something else than only object
             {
-                inherits = true;
-                sb.Append($" : {clMgr.Write(T.BaseType)}");
+                ancestors.Add(clMgr.Write(T.BaseType,true));
             }
+
             TypeFilter interfaceFilter = InterfaceFilter;
             Type[] interfaces = T.FindInterfaces(interfaceFilter, T.BaseType);//find interfaces this inherits from
+            ancestors.AddRange(interfaces.Select(q=>clMgr.Write(q,true)));
 
-            if (interfaces.Any())
+            if (ancestors.Any())
             {
-                sb.Append(!inherits ? " : " : ", ");
-                sb.Append(string.Join(", ", interfaces.Select(q => clMgr.Write(q.FullName))));//write all interfaces
+                sb.Append(" : " + string.Join(", ",ancestors));
             }
+
             #endregion
 
             sb.AppendLine();
@@ -122,8 +116,8 @@ namespace Reflex
                     commonModifiers.Add(EKeyWords.Public);
                     setterMods.Remove(EKeyWords.Public);
                 }
-
-                sb.Append($"{commonModifiers}{clMgr.Write(property.PropertyType)} {property.Name} {{ ");
+                
+                sb.Append($"{commonModifiers}{clMgr.Write(property.PropertyType,true,genericClassArgs)} {property.Name} {{ ");
                 if (property.CanRead)
                 {
                     sb.Append(getterMods + "get; ");
@@ -170,7 +164,7 @@ namespace Reflex
 
                 sb.Append("    ");
                 AccessModifiers mods = new AccessModifiers(field);
-                sb.Append($"{mods}{clMgr.Write(field.FieldType)} {field.Name}");
+                sb.Append($"{mods}{clMgr.Write(field.FieldType,true)} {field.Name}");
                 if (field.FieldType.IsPrimitive)
                 {
                     var val = mods.Contains(EKeyWords.Static) ?
@@ -191,7 +185,7 @@ namespace Reflex
             foreach (var constructor in T.GetConstructors(AllBindingFlags))
             {
                 var mods = new AccessModifiers(constructor);
-                sb.AppendLine($"    {mods}{ClassManager.Shorten(T.Name)}({ProcessParameters(constructor.GetParameters(), clMgr)}){{}}");
+                sb.AppendLine($"    {mods}{ClassManager.TrimTypeName(T.Name)}({ProcessParameters(constructor.GetParameters(), clMgr)}){{}}");
             }
             sb.AppendLine("#endregion");
             #endregion
@@ -275,7 +269,7 @@ namespace Reflex
 
                 sb.Append("    ");
                 sb.Append(mods);
-                sb.Append($"{clMgr.Write(method.ReturnType)} {name}");
+                sb.Append($"{clMgr.Write(method.ReturnType,true)} {name}");
 
                 #region generics
 
