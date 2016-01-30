@@ -3,7 +3,7 @@
     public static class Extensions
     {
         /// <summary>
-        /// basically a ToString
+        ///     basically a ToString
         /// </summary>
         /// <param name="mod"></param>
         /// <returns></returns>

@@ -1,13 +1,8 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Threading.Tasks;
-using System.Xml.Serialization;
-
-namespace Reflex
+﻿namespace Reflex
 {
-    public class TestClass<T>
+    public class TestClass //<T>
     {
-        public T prop { get; set; }
+        public int Prop { get; set; }
 
         //public static TestClass operator +(TestClass a, TestClass b)
         //{
@@ -35,7 +30,7 @@ namespace Reflex
         //{
         //    return new TestClass();
         //}
-        
+
         //public async void PubAsyncVoid()
         //{
         //    await Task.Run((() => PrivProp++));
