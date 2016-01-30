@@ -47,6 +47,10 @@ namespace Reflex
         /// <returns></returns>
         public string Write(string fullname)
         {
+            if (fullname == null)
+            {
+                return "";
+            }
             int lastDotPos = fullname.LastIndexOf('.');
             if (lastDotPos < 0)
                 return fullname;//no namespace specified
@@ -79,11 +83,16 @@ namespace Reflex
         /// </summary>
         /// <param name="shortname"></param>
         /// <returns></returns>
-        private static string Shorten(string shortname)
+        public static string Shorten(string shortname)
         {
-            if (shortname.LastIndexOf('&') == shortname.Length - 1)//ref types have & at the end it is not needed
+            
+            if (shortname.EndsWith("&"))//ref types have & at the end it is not needed
             {
                 shortname= shortname.Remove(shortname.Length - 1);
+            }
+            if (shortname.Contains("`"))//generics
+            {
+                shortname = shortname.Remove(shortname.LastIndexOf("`", StringComparison.Ordinal));
             }
 
             switch (shortname)

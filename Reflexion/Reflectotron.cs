@@ -1,6 +1,7 @@
-﻿using System;
+﻿//welocme to LINQ hell. If you aren't master in LINQ you should probably leave!
+
+using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Linq;
 using System.Reflection;
 using System.Runtime.CompilerServices;
@@ -35,41 +36,54 @@ namespace Reflex
 
         public Reflectotron(object obj)
         {
+            if (obj == null) throw new ArgumentNullException(nameof(obj));
+
             StringBuilder sb = new StringBuilder();
             Type T = obj.GetType();
             var clMgr = new ClassManager(T.Namespace);//manages class names and namespaces
-            List<string> properties = new List<string>();
+            List<string> properties = new List<string>();//properties, used to filter out auto getters and setters from methods
 
             sb.AppendLine($"namespace {T.Namespace}");
             sb.AppendLine("{");
 
+            #region class attributes
+
             Attributes classAttributes = new Attributes(T.GetCustomAttributes(), clMgr, 2);
             sb.Append(classAttributes);
 
-            var classMods = new AccessModifiers(T);
+            #endregion
 
-            sb.Append($" {classMods}class {T.Name}");
+            var classMods = new AccessModifiers(T);
+            sb.Append($"  {classMods}class {ClassManager.Shorten(T.Name)}");
+
+            #region generics
+
+            if (T.IsGenericType)
+            {
+                var genericArguments = T.GetGenericTypeDefinition()//names of generic arguments for class e.g. for class A<x,y> is "x","y"
+                    .GetGenericArguments().Select(q => q.Name).ToList();
+
+                
+                sb.Append($"<{string.Join(", ", genericArguments)}>");
+            }
+
+            #endregion
+
             #region inheritance
 
             bool inherits = false;
-            if (T.BaseType != null)
+            if ((T.BaseType != null)&&(T.BaseType!=typeof(object)))//inheritance from object class is uselles, don't display
             {
                 inherits = true;
                 sb.Append($" : {clMgr.Write(T.BaseType)}");
             }
             TypeFilter interfaceFilter = InterfaceFilter;
-            Type[] interfaces = T.FindInterfaces(interfaceFilter, T.BaseType);
+            Type[] interfaces = T.FindInterfaces(interfaceFilter, T.BaseType);//find interfaces this inherits from
 
             if (interfaces.Any())
             {
                 sb.Append(!inherits ? " : " : ", ");
-
-                for (int i = 0; i < interfaces.Length; i++)
-                {
-                    sb.Append(clMgr.Write(interfaces[i]));
-                    if (i < interfaces.Length - 1)
-                        sb.Append(", ");
-                }
+                sb.Append(string.Join(", ", interfaces.Select(q => clMgr.Write(q.FullName))));//write all interfaces
             }
             #endregion
 
@@ -177,7 +191,7 @@ namespace Reflex
             foreach (var constructor in T.GetConstructors(AllBindingFlags))
             {
                 var mods = new AccessModifiers(constructor);
-                sb.AppendLine($"    {mods}{T.Name}({ProcessParameters(constructor.GetParameters(), clMgr)}){{}}");
+                sb.AppendLine($"    {mods}{ClassManager.Shorten(T.Name)}({ProcessParameters(constructor.GetParameters(), clMgr)}){{}}");
             }
             sb.AppendLine("#endregion");
             #endregion
@@ -235,7 +249,7 @@ namespace Reflex
                     {
                         if (@interface.GetMethods().Any(q => MethodsEqual(q, method)))//this method is implemented from inetrface
                         {
-                            mods.Remove(EKeyWords.Virtual);
+                            mods.Remove(EKeyWords.Virtual);//therefore it is not virtual
                         }
                     }
                 }
@@ -259,10 +273,23 @@ namespace Reflex
 
                 #endregion
 
-
                 sb.Append("    ");
                 sb.Append(mods);
-                sb.AppendLine($"{clMgr.Write(method.ReturnType)} {name}({ProcessParameters(method.GetParameters(), clMgr)}){{}}");
+                sb.Append($"{clMgr.Write(method.ReturnType)} {name}");
+
+                #region generics
+
+                if (method.IsGenericMethod)
+                {
+                    List<string> genMethArgs =
+                        method.GetGenericMethodDefinition().GetGenericArguments().Select(q => q.Name).ToList();
+                    sb.Append($"<{string.Join(", ", genMethArgs)}>"); //generic argument separated by commas
+                }
+
+                #endregion
+
+
+                sb.AppendLine($"({ProcessParameters(method.GetParameters(), clMgr)}){{}}");
             }
             sb.AppendLine("#endregion");
 
@@ -277,6 +304,8 @@ namespace Reflex
             Info = sb.ToString();
         }
 
+        
+
         private static string ProcessParameters(IEnumerable<ParameterInfo> parameters, ClassManager mgr)
         {
             StringBuilder sb = new StringBuilder();
@@ -285,6 +314,7 @@ namespace Reflex
             for (int i = 0; i < parameterInfos.Length; i++)
             {
                 ParameterInfo param = parameterInfos.ElementAt(i);
+
                 if (param.IsOut)
                 {
                     sb.Append("out ");
@@ -294,7 +324,10 @@ namespace Reflex
                     sb.Append("ref ");
                 }
 
-                sb.Append($"{mgr.Write(param.ParameterType)} {param.Name}");
+                string typeName = param.ParameterType.FullName == null ? 
+                    param.ParameterType.Name : mgr.Write(param.ParameterType);//generic parameter name or regular type
+
+                sb.Append($"{typeName} {param.Name}");
                 if (param.IsOptional)
                 {
                     string val = "null";
@@ -427,8 +460,7 @@ namespace Reflex
                 if (!this.Any())
                     return "";
 
-                string res = this.Aggregate("", (current, str) => current + (str.Str() + " "));
-                return res;
+                return string.Join(" ", this.Select(q=>q.Str()))+" ";
             }
 
             public bool IsPublic => Contains(EKeyWords.Public);
