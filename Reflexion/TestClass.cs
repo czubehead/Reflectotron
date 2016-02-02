@@ -1,16 +1,32 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.ComponentModel;
 
 namespace Reflex
 {
-    public class TestClass <T> where T : new()
+    public class TestClass
     {
-        public T Prop { get; set; }
-        public int S { get; set; }
-        public List<T> Genmeth => null; 
+        public event EventHandler Fired;
 
-        public T GetT()
+        public enum MyEnum
         {
-            return new T();
+            [Description]
+            Opt1,
+            Opt2
+        }
+
+        public string Name { get; set; }
+        private DateTime _id;
+        protected int GetInt<V>(V v)
+        {
+            return 0;
+        }
+    }
+
+    class NothingAttribute:Attribute
+    {
+        public NothingAttribute(string seed)
+        {
+            
         }
     }
 }

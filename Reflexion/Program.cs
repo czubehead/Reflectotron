@@ -6,7 +6,7 @@ namespace Reflex
     {
         private static void Main(string[] args)
         {
-            var tc = new TestClass<int> {S=2};
+            var tc = new TestClass();
 
             var reflectotron = new Reflectotron(tc);
             Console.WriteLine(reflectotron.Info);

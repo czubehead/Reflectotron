@@ -2,6 +2,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Reflection;
 using System.Runtime.CompilerServices;
@@ -52,6 +53,7 @@ namespace Reflex
 
             var clMgr = new ClassManager(T.Namespace); //manages class names and namespaces
             var properties = new List<string>(); //properties, used to filter out auto getters and setters from methods
+            var ignoredMembers=new List<string>();//list of members to be ignored (obviously)
 
             sb.AppendLine($"namespace {T.Namespace}");
             sb.AppendLine("{");
@@ -90,137 +92,219 @@ namespace Reflex
             sb.AppendLine();
             sb.AppendLine("  {");
 
-            #region properties
+            #region enums
 
-            sb.AppendLine("#region properties");
-
-            foreach (var property in T.GetProperties(AllBindingFlags))
+            List<Type> enums = T.GetNestedTypes().Where(q => q.IsEnum).ToList();
+            if(enums.Any())
             {
-                var attrs = new Attributes(property.GetCustomAttributes(), clMgr, 4);
-
-                sb.Append(attrs);
-                sb.Append("    ");
-
-                #region access modifiers for getters and setters
-
-                var getterInfos =
-                    property.GetAccessors(true).Where(a => a.ReturnType != typeof(void)).ToArray();
-                //setters don't have return types
-                var setterInfos =
-                    property.GetAccessors(true).Where(a => a.ReturnType == typeof(void)).ToArray(); //getters do
-
-                var setterMods = new AccessModifiers(setterInfos);
-                var getterMods = new AccessModifiers(getterInfos);
-
-                //those which are the same for both getter and setter
-                var commonModifiers = new AccessModifiers();
-                commonModifiers.AddRange(getterMods.Where(accessModifier => setterMods.Contains(accessModifier)));
-                getterMods.RemoveAll(q => commonModifiers.Contains(q));
-                setterMods.RemoveAll(q => commonModifiers.Contains(q)); //they are redundant there
-
-                if (getterMods.IsPublic && setterMods.IsPrivate) //one is more restraining than other
+                foreach (var @enum in enums)
                 {
-                    commonModifiers.Add(EKeyWords.Public);
-                    getterMods.Remove(EKeyWords.Public);
-                }
-                else if (setterMods.IsPublic && getterMods.IsPrivate) //who uses this anyway?
-                {
-                    commonModifiers.Add(EKeyWords.Public);
-                    setterMods.Remove(EKeyWords.Public);
-                }
-                #endregion
-
-                if (property.CanRead && !property.CanWrite)//read-only property
-                {
-                    commonModifiers.AddRange(getterMods);
-                    getterMods.Clear();
-                }
-                else if (property.CanWrite && !property.CanRead)//set-only property (does it even exist?)
-                {
-                    commonModifiers.AddRange(setterMods);
-                    setterMods.Clear();
-                }
-
-                string type = clMgr.Write(property.PropertyType, true,T,q=>q.GetProperty(property.Name).PropertyType);
-                bool isGeneric = false;
-
-                #region generic property type
-
-                if (T.IsGenericType) //may be a property with generic type
-                {
-                    Type genProp = T.GetGenericTypeDefinition().GetProperty(property.Name).PropertyType;
-                    if (genProp.IsGenericParameter)
+                    string mod = @enum.IsPublic ? "public" : "private";
+                    sb.AppendLine($"    {mod} enum {ClassManager.TrimTypeName(@enum.Name)}");
+                    sb.AppendLine("    {");
+                    foreach (var enumName in @enum.GetEnumNames())
                     {
-                        isGeneric = true;
+                        MemberInfo info = @enum.GetMember(enumName)[0];
+                        Attributes attrib=new Attributes(info.GetCustomAttributes(),clMgr,6);
+                        if (attrib.ToString() != "")
+                            sb.Append(attrib.ToString());
+                        sb.AppendLine($"      {enumName},");
                     }
+                    sb.AppendLine("    }");
                 }
-
-                #endregion
-
-                sb.Append($"{commonModifiers}{type} {property.Name} {{ ");
-
-                if (property.CanRead) //getter
-                {
-                    sb.Append(getterMods + "get; ");
-                }
-                if (property.CanWrite) //setter
-                {
-                    sb.Append(setterMods + "set; ");
-                }
-                sb.Append("}");
-
-                if (!isGeneric)
-                {
-                    Type[] numberTypes = { typeof(int), typeof(long), typeof(short), typeof(sbyte) };
-                    if (numberTypes.Contains(property.PropertyType))
-                    {
-                        if (property.GetValue(obj).ToString() != "0")
-                            sb.Append($" = {property.GetValue(obj)};");
-                    }
-                    else if (property.PropertyType == typeof(string))
-                    {
-                        sb.Append($" = \"{property.GetValue(obj)}\"");
-                    }
-                }
-
-                properties.Add(property.Name); //save for later use
-                sb.AppendLine();
             }
-            sb.AppendLine("#endregion");
+            
 
             #endregion
 
             sb.AppendLine();
 
+            #region properties
+
+            if (T.GetProperties(AllBindingFlags).Any())
+            {
+                sb.AppendLine("#region properties");
+
+                foreach (var property in T.GetProperties(AllBindingFlags))
+                {
+                    var attrs = new Attributes(property.GetCustomAttributes(), clMgr, 4);
+
+                    sb.Append(attrs);
+                    sb.Append("    ");
+
+                    #region access modifiers for getters and setters
+
+                    var getterInfos =
+                        property.GetAccessors(true).Where(a => a.ReturnType != typeof (void)).ToArray();
+                    //setters don't have return types
+                    var setterInfos =
+                        property.GetAccessors(true).Where(a => a.ReturnType == typeof (void)).ToArray(); //getters do
+
+                    var setterMods = new AccessModifiers(setterInfos);
+                    var getterMods = new AccessModifiers(getterInfos);
+
+                    //those which are the same for both getter and setter
+                    var commonModifiers = new AccessModifiers();
+                    commonModifiers.AddRange(getterMods.Where(accessModifier => setterMods.Contains(accessModifier)));
+                    getterMods.RemoveAll(q => commonModifiers.Contains(q));
+                    setterMods.RemoveAll(q => commonModifiers.Contains(q)); //they are redundant there
+
+                    if (getterMods.IsPublic && setterMods.IsPrivate) //one is more restraining than other
+                    {
+                        commonModifiers.Add(EKeyWords.Public);
+                        getterMods.Remove(EKeyWords.Public);
+                    }
+                    else if (setterMods.IsPublic && getterMods.IsPrivate) //who uses this anyway?
+                    {
+                        commonModifiers.Add(EKeyWords.Public);
+                        setterMods.Remove(EKeyWords.Public);
+                    }
+                    if (property.CanRead && !property.CanWrite) //read-only property
+                    {
+                        commonModifiers.AddRange(getterMods);
+                        getterMods.Clear();
+                    }
+                    else if (property.CanWrite && !property.CanRead) //set-only property (does it even exist?)
+                    {
+                        commonModifiers.AddRange(setterMods);
+                        setterMods.Clear();
+                    }
+
+                    #endregion
+
+                    string type = clMgr.WriteReturnType(property.PropertyType, T,
+                        q => q.GetProperty(property.Name,AllBindingFlags).PropertyType);
+                    bool isSpecial = false;
+
+                    #region generic property type
+
+                    if (T.IsGenericType) //may be a property with generic type
+                    {
+                        Type genProp = T.GetGenericTypeDefinition().GetProperty(property.Name).PropertyType;
+                        if (genProp.IsGenericParameter)
+                        {
+                            isSpecial = true;
+                        }
+                    }
+
+                    #endregion
+
+                    sb.Append($"{commonModifiers}{type} {property.Name} {{ ");
+
+                    if (property.CanRead) //getter
+                    {
+                        sb.Append(getterMods + "get; ");
+                        ignoredMembers.Add($"get_{property.Name}");
+                    }
+                    if (property.CanWrite) //setter
+                    {
+                        sb.Append(setterMods + "set; ");
+                        ignoredMembers.Add($"set_{property.Name}");
+                    }
+                    sb.Append("}");
+
+                    if (!isSpecial&&!property.IsSpecialName)
+                    {
+                        try
+                        {
+                            Type[] numberTypes = {typeof (int), typeof (long), typeof (short), typeof (sbyte)};
+                            if (numberTypes.Contains(property.PropertyType))
+                            {
+                                if (property.GetValue(obj).ToString() != "0")
+                                    sb.Append($" = {property.GetValue(obj)};");
+                            }
+                            else if (property.PropertyType == typeof (string))
+                            {
+                                if(property.GetValue(obj).ToString()!="")
+                                sb.Append($" = \"{property.GetValue(obj)}\";");
+                            }
+                        }
+                        catch
+                        {
+                            // ignored
+                        }
+                    }
+
+                    properties.Add(property.Name); //save for later use
+                    sb.AppendLine();
+                }
+                sb.AppendLine("#endregion");
+            }
+
+            #endregion
+
+            sb.AppendLine();
+
+            #region events
+
+            if (T.GetEvents(AllBindingFlags).Any())
+            {
+                sb.AppendLine("#region events");
+                foreach (var @event in T.GetEvents())
+                {
+                    sb.Append("    ");
+                    sb.Append($"public event {clMgr.WriteReturnType(@event.EventHandlerType,T,q=>q.GetEvent(@event.Name).EventHandlerType)} {@event.Name};");
+                    //no way to get a proper access modifier
+                    sb.AppendLine();
+                    ignoredMembers.Add($"add_{@event.Name}");
+                    ignoredMembers.Add($"remove_{@event.Name}");
+                    ignoredMembers.Add(@event.Name);
+                }
+                sb.AppendLine("#endregion");
+            }
+
+            #endregion
+            
+            sb.AppendLine();
+
             #region fields
 
-            sb.AppendLine("#region fields");
-            foreach (var field in T.GetFields(AllBindingFlags))
+            if (T.GetFields(AllBindingFlags).Any())
             {
-                var name = field.Name;
-                if (name.IndexOf('<') == 0) //backing field for auto-property => ignore
+                sb.AppendLine("#region fields");
+                foreach (var field in T.GetFields(AllBindingFlags).Where(q => !ignoredMembers.Contains(q.Name)))
                 {
-                    continue;
+                    var name = field.Name;
+                    if (name.IndexOf('<') == 0) //backing field for auto-property => ignore
+                    {
+                        continue;
+                    }
+
+                    var attrs = new Attributes(field.GetCustomAttributes(), clMgr, 4);
+                    sb.Append(attrs);
+
+                    sb.Append("    ");
+                    var mods = new AccessModifiers(field);
+                    sb.Append(
+                        $"{mods}{clMgr.WriteReturnType(field.FieldType, T, q => q.GetField(field.Name,AllBindingFlags).FieldType)} {field.Name}");
+
+                    #region value
+
+                    try
+                    {
+                        Type[] numberTypes = {typeof (int), typeof (long), typeof (short), typeof (sbyte)};
+                        if (numberTypes.Contains(field.FieldType))
+                        {
+                            if (field.GetValue(obj).ToString() != "0")
+                                sb.Append($" = {field.GetValue(obj)};");
+                        }
+                        else if (field.FieldType == typeof (string))
+                        {
+                            if (field.GetValue(obj).ToString() != "")
+                                sb.Append($" = \"{field.GetValue(obj)}\";");
+                        }
+                    }
+                    catch (Exception)
+                    {
+                        // ignored
+                    }
+
+                    #endregion
+
+                    sb.AppendLine(";");
                 }
-                
-                var attrs = new Attributes(field.GetCustomAttributes(), clMgr, 4);
-                sb.Append(attrs);
-
-                sb.Append("    ");
-                var mods = new AccessModifiers(field);
-                sb.Append($"{mods}{clMgr.WriteReturnType(field.FieldType,T,q=>q.GetField(field.Name).FieldType)} {field.Name}");
-
-                if (field.FieldType.IsPrimitive) //the value can be safey assigned
-                {
-                    var val = mods.Contains(EKeyWords.Static)
-                        ? field.GetValue(null).ToString()
-                        : field.GetValue(obj).ToString();
-
-                    sb.Append($" = {val}");
-                }
-                sb.AppendLine(";");
+                sb.AppendLine("#endregion");
             }
-            sb.AppendLine("#endregion");
 
             #endregion
 
@@ -243,88 +327,89 @@ namespace Reflex
 
             #region methods
 
-            sb.AppendLine("#region methods");
-            foreach (var method in T.GetMethods(AllBindingFlags))
+            if (T.GetMethods(AllBindingFlags).Any())
             {
-                var mods = new AccessModifiers(method);
-                var name = method.Name; //name to be used. is edited for the advanced stuff
-
-                if (method.IsSpecialName) //auto-generated method
+                sb.AppendLine("#region methods");
+                foreach (var method in T.GetMethods(AllBindingFlags).Where(q=>!ignoredMembers.Contains(q.Name)))
                 {
-                    if (properties.Any(p => method.Name == $"get_{p}")) //auto-getters                
-                        continue;
-                    if (properties.Any(p => method.Name == $"set_{p}"))
-                        continue;
+                    var mods = new AccessModifiers(method);
+                    var name = method.Name; //name to be used. is edited for the advanced stuff
 
-                    #region operators, conversions
+                    Debug.WriteLine(name);
 
-                    if (method.Name.IndexOf("op_", StringComparison.Ordinal) == 0) //operators have prefix "op_"
+                    if (method.IsSpecialName) //auto-generated method
                     {
-                        var tempName = method.Name.Remove(0, 3);
-                        switch (tempName)
+                        #region operators, conversions
+
+                        if (method.Name.IndexOf("op_", StringComparison.Ordinal) == 0) //operators have prefix "op_"
                         {
-                            case "Implicit": //implicit conversion
-                                name = "";
-                                mods.Add(EKeyWords.Implicit);
-                                mods.Add(EKeyWords.Operator);
-                                break;
-                            case "Addition":
-                                name = "operator + ";
-                                break;
-                            case "Subtraction":
-                                name = "operator - ";
-                                break;
-                            case "Multiply":
-                                name = "operator * ";
-                                break;
-                            case "Division":
-                                name = "operator / ";
-                                break;
+                            var tempName = method.Name.Remove(0, 3);
+                            switch (tempName)
+                            {
+                                case "Implicit": //implicit conversion
+                                    name = "";
+                                    mods.Add(EKeyWords.Implicit);
+                                    mods.Add(EKeyWords.Operator);
+                                    break;
+                                case "Addition":
+                                    name = "operator + ";
+                                    break;
+                                case "Subtraction":
+                                    name = "operator - ";
+                                    break;
+                                case "Multiply":
+                                    name = "operator * ";
+                                    break;
+                                case "Division":
+                                    name = "operator / ";
+                                    break;
+                            }
                         }
+
+                        #endregion
+                    }
+
+                    foreach (var @interface in interfaces) //no virtual keywords for methods implemented by interface
+                        if (@interface.GetMethods().Any(q => MethodsEqual(q, method)))
+                            //this method is implemented from inetrface                            
+                            mods.Remove(EKeyWords.Virtual); //therefore it is not virtual
+
+                    #region async methods
+
+                    var asyncAttribType = typeof (AsyncStateMachineAttribute); //async methods have these
+                    var asyncAttrib = method.GetCustomAttribute(asyncAttribType) as AsyncStateMachineAttribute;
+                    if (asyncAttrib != null)
+                        mods.Add(EKeyWords.Async); //it is async
+
+                    if ((method.Name.IndexOf('<') == 0) && (method.ReturnType == typeof (int)))
+                        //async helper method, auto generated                    
+                        if (T.GetMethods(BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public)
+                            .Any(m => method.Name.IndexOf(m.Name, StringComparison.Ordinal) == 1))
+                            //looks like this: private int <asyncmethod>__x_()
+                            continue; //skip it
+
+                    #endregion
+
+                    sb.Append("    ");
+                    sb.Append(mods);
+                    sb.Append(
+                        $"{clMgr.WriteReturnType(method.ReturnType, T, q => q.GetMethod(method.Name,AllBindingFlags).ReturnType)} {name}");
+
+                    #region generics
+
+                    if (method.IsGenericMethod)
+                    {
+                        var genMethArgs =
+                            method.GetGenericMethodDefinition().GetGenericArguments().Select(q => q.Name).ToList();
+                        sb.Append($"<{string.Join(", ", genMethArgs)}>"); //generic arguments' names separated by commas
                     }
 
                     #endregion
+
+                    sb.AppendLine($"({ProcessParameters(method.GetParameters(), clMgr)}){{}}");
                 }
-
-                foreach (var @interface in interfaces) //no virtual keywords for methods implemented by interface
-                    if (@interface.GetMethods().Any(q => MethodsEqual(q, method)))
-                        //this method is implemented from inetrface                            
-                        mods.Remove(EKeyWords.Virtual); //therefore it is not virtual
-
-                #region async methods
-
-                var asyncAttribType = typeof(AsyncStateMachineAttribute); //async methods have these
-                var asyncAttrib = method.GetCustomAttribute(asyncAttribType) as AsyncStateMachineAttribute;
-                if (asyncAttrib != null)
-                    mods.Add(EKeyWords.Async); //it is async
-
-                if ((method.Name.IndexOf('<') == 0) && (method.ReturnType == typeof(int)))
-                    //async helper method, auto generated                    
-                    if (T.GetMethods(BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public)
-                        .Any(m => method.Name.IndexOf(m.Name, StringComparison.Ordinal) == 1))
-                        //looks like this: private int <asyncmethod>__x_()
-                        continue; //skip it
-
-                #endregion
-
-                sb.Append("    ");
-                sb.Append(mods);
-                sb.Append($"{clMgr.WriteReturnType(method.ReturnType,T,q=>q.GetMethod(method.Name).ReturnType)} {name}");
-
-                #region generics
-
-                if (method.IsGenericMethod)
-                {
-                    var genMethArgs =
-                        method.GetGenericMethodDefinition().GetGenericArguments().Select(q => q.Name).ToList();
-                    sb.Append($"<{string.Join(", ", genMethArgs)}>"); //generic arguments' names separated by commas
-                }
-
-                #endregion
-
-                sb.AppendLine($"({ProcessParameters(method.GetParameters(), clMgr)}){{}}");
+                sb.AppendLine("#endregion");
             }
-            sb.AppendLine("#endregion");
 
             #endregion
 
