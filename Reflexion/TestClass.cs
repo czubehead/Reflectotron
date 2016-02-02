@@ -1,5 +1,6 @@
 ﻿using System;
 using System.ComponentModel;
+using System.Xml.Serialization;
 
 namespace Reflex
 {
@@ -9,11 +10,12 @@ namespace Reflex
 
         public enum MyEnum
         {
-            [Description]
+            [Description()]
             Opt1,
             Opt2
         }
 
+        [XmlAttribute("k")]
         public string Name { get; set; }
         private DateTime _id;
         protected int GetInt<V>(V v)

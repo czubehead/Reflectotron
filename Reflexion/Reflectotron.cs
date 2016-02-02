@@ -636,10 +636,54 @@ namespace Reflex
 
             public override string ToString()
             {
-                if (!this.Any())
-                    return "";
-                return this.Aggregate("",
-                    (prev, next) => $"{prev}{_indent}[{_classManager.Write(next.GetType())}]{Environment.NewLine}");
+                List<string> lines=new List<string>();
+                foreach (var attribute in this)
+                {
+                    var T = attribute.GetType();
+
+                    Dictionary<string,string> props=new Dictionary<string, string>();//property,value
+                    object def = Activator.CreateInstance(T);//default instance to match properties with
+                    
+                    foreach (var property in T.GetProperties())
+                    {
+                        try
+                        {
+                            if(property.GetValue(attribute).Equals(property.GetValue(def)))//the property's value is not default
+                                continue;
+
+                            string value=null;
+                            Type[] numberTypes = { typeof(int), typeof(long), typeof(short), typeof(sbyte) };
+                            if (numberTypes.Contains(property.PropertyType))
+                            {
+                                value = property.GetValue(attribute).ToString();
+                            }
+                            else if (property.PropertyType == typeof(string))
+                            {
+                                value=$"\"{property.GetValue(attribute)}\"";
+                            }
+
+                            if (value != null)
+                            {
+                                props.Add(property.Name,value);
+                            }
+                        }
+                        catch
+                        {
+                            //ignore
+                        }
+                    }
+
+                    StringBuilder line=new StringBuilder($"{_indent}[{_classManager.Write(T, true)}");
+                    if(props.Any())//some properties have not default values                        
+                    {
+                        line.Append("(");
+                        line.Append(string.Join(", ", props.Select(q => $"{q.Key} = {q.Value}")));
+                        line.Append(")");
+                    }
+                    line.Append("]");
+                    lines.Add(line.ToString());
+                }
+                return string.Join(Environment.NewLine,lines)+Environment.NewLine;
             }
         }
 
