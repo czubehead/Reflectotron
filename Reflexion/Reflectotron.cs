@@ -67,15 +67,12 @@ namespace Reflex
             var classMods = new AccessModifiers(T);
             sb.Append($"  {classMods}class {clMgr.Write(T)}");
 
-            //list of class's generic arguments
-            var genericClassArgs = T.GetGenericTypeDefinition().GetGenericArguments().Select(q => q.Name).ToList();
-
             #region inheritance
 
             var ancestors = new List<string>();
 
-            if ((T.BaseType != null) && (T.BaseType != typeof (object)))
-                //inherits from something else than only object class
+            if ((T.BaseType != null) && (T.BaseType != typeof(object)))
+            //inherits from something else than only object class
             {
                 ancestors.Add(clMgr.Write(T.BaseType, true));
             }
@@ -107,15 +104,13 @@ namespace Reflex
                 #region access modifiers for getters and setters
 
                 var getterInfos =
-                    property.GetAccessors(true).Where(a => a.ReturnType != typeof (void)).ToArray();
+                    property.GetAccessors(true).Where(a => a.ReturnType != typeof(void)).ToArray();
                 //setters don't have return types
                 var setterInfos =
-                    property.GetAccessors(true).Where(a => a.ReturnType == typeof (void)).ToArray(); //getters do
+                    property.GetAccessors(true).Where(a => a.ReturnType == typeof(void)).ToArray(); //getters do
 
                 var setterMods = new AccessModifiers(setterInfos);
                 var getterMods = new AccessModifiers(getterInfos);
-
-                #endregion
 
                 //those which are the same for both getter and setter
                 var commonModifiers = new AccessModifiers();
@@ -133,9 +128,37 @@ namespace Reflex
                     commonModifiers.Add(EKeyWords.Public);
                     setterMods.Remove(EKeyWords.Public);
                 }
+                #endregion
 
-                sb.Append(
-                    $"{commonModifiers}{clMgr.Write(property.PropertyType, true, genericClassArgs)} {property.Name} {{ ");
+                if (property.CanRead && !property.CanWrite)//read-only property
+                {
+                    commonModifiers.AddRange(getterMods);
+                    getterMods.Clear();
+                }
+                else if (property.CanWrite && !property.CanRead)//set-only property (does it even exist?)
+                {
+                    commonModifiers.AddRange(setterMods);
+                    setterMods.Clear();
+                }
+
+                string type = clMgr.Write(property.PropertyType, true,T,q=>q.GetProperty(property.Name).PropertyType);
+                bool isGeneric = false;
+
+                #region generic property type
+
+                if (T.IsGenericType) //may be a property with generic type
+                {
+                    Type genProp = T.GetGenericTypeDefinition().GetProperty(property.Name).PropertyType;
+                    if (genProp.IsGenericParameter)
+                    {
+                        isGeneric = true;
+                    }
+                }
+
+                #endregion
+
+                sb.Append($"{commonModifiers}{type} {property.Name} {{ ");
+
                 if (property.CanRead) //getter
                 {
                     sb.Append(getterMods + "get; ");
@@ -146,15 +169,17 @@ namespace Reflex
                 }
                 sb.Append("}");
 
-                if (property.PropertyType.IsPrimitive) //properties values
+                if (!isGeneric)
                 {
-                    try
+                    Type[] numberTypes = { typeof(int), typeof(long), typeof(short), typeof(sbyte) };
+                    if (numberTypes.Contains(property.PropertyType))
                     {
-                        sb.Append(" = " + T.GetProperty(property.Name).GetValue(obj, null) + ";");
+                        if (property.GetValue(obj).ToString() != "0")
+                            sb.Append($" = {property.GetValue(obj)};");
                     }
-                        // ReSharper disable once EmptyGeneralCatchClause
-                    catch (Exception)
+                    else if (property.PropertyType == typeof(string))
                     {
+                        sb.Append($" = \"{property.GetValue(obj)}\"");
                     }
                 }
 
@@ -177,13 +202,14 @@ namespace Reflex
                 {
                     continue;
                 }
-
+                
                 var attrs = new Attributes(field.GetCustomAttributes(), clMgr, 4);
                 sb.Append(attrs);
 
                 sb.Append("    ");
                 var mods = new AccessModifiers(field);
-                sb.Append($"{mods}{clMgr.Write(field.FieldType, true)} {field.Name}");
+                sb.Append($"{mods}{clMgr.WriteReturnType(field.FieldType,T,q=>q.GetField(field.Name).FieldType)} {field.Name}");
+
                 if (field.FieldType.IsPrimitive) //the value can be safey assigned
                 {
                     var val = mods.Contains(EKeyWords.Static)
@@ -267,12 +293,12 @@ namespace Reflex
 
                 #region async methods
 
-                var asyncAttribType = typeof (AsyncStateMachineAttribute); //async methods have these
+                var asyncAttribType = typeof(AsyncStateMachineAttribute); //async methods have these
                 var asyncAttrib = method.GetCustomAttribute(asyncAttribType) as AsyncStateMachineAttribute;
                 if (asyncAttrib != null)
                     mods.Add(EKeyWords.Async); //it is async
 
-                if ((method.Name.IndexOf('<') == 0) && (method.ReturnType == typeof (int)))
+                if ((method.Name.IndexOf('<') == 0) && (method.ReturnType == typeof(int)))
                     //async helper method, auto generated                    
                     if (T.GetMethods(BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public)
                         .Any(m => method.Name.IndexOf(m.Name, StringComparison.Ordinal) == 1))
@@ -283,7 +309,7 @@ namespace Reflex
 
                 sb.Append("    ");
                 sb.Append(mods);
-                sb.Append($"{clMgr.Write(method.ReturnType, true)} {name}");
+                sb.Append($"{clMgr.WriteReturnType(method.ReturnType,T,q=>q.GetMethod(method.Name).ReturnType)} {name}");
 
                 #region generics
 
@@ -348,11 +374,11 @@ namespace Reflex
                 if (param.IsOptional)
                 {
                     var val = "null";
-                    if (param.ParameterType == typeof (int))
+                    if (param.ParameterType == typeof(int))
                     {
                         val = param.RawDefaultValue.ToString();
                     }
-                    else if (param.ParameterType == typeof (string))
+                    else if (param.ParameterType == typeof(string))
                     {
                         val = "\"" + param.RawDefaultValue + "\"";
                     }
@@ -393,7 +419,7 @@ namespace Reflex
         /// <returns></returns>
         private static bool InterfaceFilter(Type typeObj, object criteriaObj)
         {
-            var baseClassType = (Type) criteriaObj;
+            var baseClassType = (Type)criteriaObj;
             // Obtain an array of the interfaces supported by the base class
             var interfacesArray = baseClassType.GetInterfaces();
             return interfacesArray.All(t => typeObj.ToString() != t.ToString());
@@ -429,7 +455,7 @@ namespace Reflex
                 }
             }
 
-            public AccessModifiers(MethodInfo info) : this(new[] {info})
+            public AccessModifiers(MethodInfo info) : this(new[] { info })
             {
             }
 

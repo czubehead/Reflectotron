@@ -14,11 +14,13 @@ namespace Reflex
         /// </summary>
         private readonly Dictionary<string, string> _classes;
 
+        public delegate Type GetReturnType(Type reflectedType);
+
         /// <summary>
         ///     working namespace
         /// </summary>
         private readonly string _namespace;
-
+        
         /// <param name="namespaceScope">Namespace of class reflected</param>
         public ClassManager(string namespaceScope)
         {
@@ -43,18 +45,33 @@ namespace Reflex
             }
         }
 
+        public string WriteReturnType(Type type, Type reflectedType, GetReturnType deleg)
+        {
+            return Write(type,true, reflectedType, deleg);
+        }
+
         /// <summary>
         ///     Returns a simplified class name from Namespace.Class with respect to usings
         /// </summary>
+        /// <param name="type"></param>
         /// <param name="usetypes">whether to use class names for generics instead of parameter names</param>
-        /// <param name="genericClassArguments">list of generic arguments that won't be affected by <see cref="usetypes" /></param>
         /// <returns></returns>
-        public string Write(Type type, bool usetypes = false, IEnumerable<string> genericClassArguments = null)
+        public string Write(Type type, bool usetypes = false,Type reflectedType=null,GetReturnType deleg=null)
         {
             var fullname = type.FullName;
             if (fullname == null)
             {
                 return TrimTypeName(type.Name);
+            }
+            
+            if ((reflectedType != null)&&(deleg!=null))
+            {
+                if (reflectedType.IsGenericType)
+                {
+                    Type returnType = deleg(reflectedType.GetGenericTypeDefinition());
+                    if (returnType.IsGenericParameter)
+                        return returnType.Name;
+                }
             }
 
             var nameSpace = type.Namespace;
@@ -62,12 +79,12 @@ namespace Reflex
 
             if ((nameSpace != _namespace) && _classes.ContainsKey(shortName) && (_classes[shortName] != nameSpace))
                 //class name conflict, use full name
-                return $"{nameSpace}.{shortName}{GetGenericPart(type, usetypes, genericClassArguments)}";
+                return $"{nameSpace}.{shortName}{GetGenericPart(type, usetypes)}";
 
             if (!_classes.ContainsKey(shortName)) //unknown class with no conflicts            
                 _classes.Add(shortName, nameSpace); //remember it
 
-            return $"{shortName}{GetGenericPart(type, usetypes, genericClassArguments)}";
+            return $"{shortName}{GetGenericPart(type, usetypes)}";
         }
 
         /// <summary>
@@ -77,33 +94,14 @@ namespace Reflex
         /// <param name="usetype">if true, T1 will be replaced with actual class name</param>
         /// <param name="exclude"></param>
         /// <returns></returns>
-        private string GetGenericPart(Type type, bool usetype = false, IEnumerable<string> exclude = null)
+        private string GetGenericPart(Type type, bool usetype = false)
         {
             if (!type.IsGenericType) return "";
-
-            exclude = exclude?.ToList() ?? new List<string>();
-
-            var genericArguments = new List<string>();
+            
+            List<string> genericArguments;
             if (usetype)
             {
-                var repeatIndexes = new List<int>();
-                for (var i = 0; i < type.GetGenericArguments().Length; i++)
-                {
-                    var genericArgument = type.GetGenericArguments()[i];
-
-                    if (!exclude.Contains(Write(genericArgument)))
-                        genericArguments.Add(Write(genericArgument));
-                    else //T1 should be used insted of type
-                        repeatIndexes.Add(i);
-                }
-                for (var index = 0; index < type.GetGenericTypeDefinition().GetGenericArguments().Length; index++)
-                    //repeat for indexes which are T1 and not classes
-                {
-                    if (!repeatIndexes.Contains(index)) continue;
-
-                    var genericArgument = type.GetGenericTypeDefinition().GetGenericArguments()[index];
-                    genericArguments.Add(genericArgument.Name);
-                }
+                genericArguments = type.GetGenericArguments().Select(q => Write(q)).ToList();
             }
             else
             {
