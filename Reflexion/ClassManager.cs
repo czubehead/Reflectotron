@@ -25,11 +25,11 @@ namespace Reflex
         ///     working namespace
         /// </summary>
         private readonly string _namespace;
-        
+
         /// <param name="namespaceScope">Namespace of class reflected</param>
         public ClassManager(string namespaceScope)
         {
-            _classes = new Dictionary<string, string>();
+            _classes=new Dictionary<string, string>();
             _namespace = namespaceScope;
         }
 
@@ -59,7 +59,7 @@ namespace Reflex
         /// <returns></returns>
         public string WriteReturnType(Type type, Type reflectedType, GetReturnType deleg)
         {
-            return Write(type,true, reflectedType, deleg);
+            return Write(type, true, reflectedType, deleg);
         }
 
         /// <summary>
@@ -70,15 +70,15 @@ namespace Reflex
         /// <param name="reflectedType">type reflected by <see cref="Reflectotron"/></param>
         /// <param name="deleg"></param>
         /// <returns></returns>
-        public string Write(Type type, bool usetypes = false,Type reflectedType=null,GetReturnType deleg=null)
+        public string Write(Type type, bool usetypes = false, Type reflectedType = null, GetReturnType deleg = null)
         {
             var fullname = type.FullName;
             if (fullname == null)
             {
                 return TrimTypeName(type.Name);
             }
-            
-            if ((reflectedType != null)&&(deleg!=null))
+
+            if ((reflectedType != null) && (deleg != null))
             {
                 if (reflectedType.IsGenericType)
                 {
@@ -90,7 +90,7 @@ namespace Reflex
 
             var nameSpace = type.Namespace;
             var shortName = TrimTypeName(type.Name);
-            if (shortName.EndsWith("Attribute") && (type.BaseType == typeof (Attribute)))//"attribute" can be safely removed
+            if (shortName.EndsWith("Attribute") && (type.BaseType == typeof(Attribute)))//"attribute" can be safely removed
             {
                 shortName = shortName.Remove(shortName.LastIndexOf("Attribute", StringComparison.Ordinal));
             }
@@ -114,7 +114,7 @@ namespace Reflex
         private string GetGenericPart(Type type, bool usetype = false)
         {
             if (!type.IsGenericType) return "";
-            
+
             List<string> genericArguments;
             if (usetype)
             {

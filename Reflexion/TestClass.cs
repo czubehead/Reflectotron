@@ -10,7 +10,7 @@ namespace Reflex
 
         public enum MyEnum
         {
-            [Description()]
+            [Description("hey")]
             Opt1,
             Opt2
         }
@@ -18,17 +18,10 @@ namespace Reflex
         [XmlAttribute("k")]
         public string Name { get; set; }
         private DateTime _id;
+        public string name;
         protected int GetInt<V>(V v)
         {
             return 0;
-        }
-    }
-
-    class NothingAttribute:Attribute
-    {
-        public NothingAttribute(string seed)
-        {
-            
         }
     }
 }
