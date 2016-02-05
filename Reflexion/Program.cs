@@ -6,10 +6,10 @@ namespace Reflex
     {
         private static void Main(string[] args)
         {
-            var tc = new TestClass {Name = "big",name="small"};
+            var tc = new TestClass<DateTime> ();
 
             var reflectotron = new Reflectotron(tc);
-            Console.WriteLine(reflectotron.Info);
+            Console.WriteLine(reflectotron.ReflectedInfo);
             Console.ReadKey();
         }
     }

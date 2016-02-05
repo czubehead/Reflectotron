@@ -9,11 +9,7 @@
         /// <returns></returns>
         public static string Str(this Reflectotron.EKeyWords mod)
         {
-            switch (mod)
-            {
-                default:
-                    return mod.ToString().ToLower();
-            }
+            return mod.ToString().ToLower();
         }
     }
 }

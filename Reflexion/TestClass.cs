@@ -4,24 +4,11 @@ using System.Xml.Serialization;
 
 namespace Reflex
 {
-    public class TestClass
+    public class TestClass<T>
     {
-        public event EventHandler Fired;
-
-        public enum MyEnum
+        public T this[int index]
         {
-            [Description("hey")]
-            Opt1,
-            Opt2
-        }
-
-        [XmlAttribute("k")]
-        public string Name { get; set; }
-        private DateTime _id;
-        public string name;
-        protected int GetInt<V>(V v)
-        {
-            return 0;
+            set { }
         }
     }
 }
