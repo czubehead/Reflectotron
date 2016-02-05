@@ -10,10 +10,11 @@ using System.Text;
 
 namespace Reflex
 {
+    /// <summary>
+    ///     Takes an instance of a class and tries its best to estimate the class structure. Designed by czubehead
+    /// </summary>
     public class Reflectotron
     {
-        public string Indent { get; }
-
         /// <summary>
         ///     Keywords for modifiyng all stuff in classed
         /// </summary>
@@ -32,7 +33,8 @@ namespace Reflex
             Operator,
             Implicit,
             Explicit,
-            Async
+            Async,
+            Const
         }
 
         /// <summary>
@@ -45,10 +47,11 @@ namespace Reflex
         /// <summary>
         ///     Instatializes a new <see cref="Reflectotron" /> class.
         /// </summary>
-        /// <param name="obj">Object to be reflected, its estimated reprasentation will be saved in <see cref="ReflectedInfo" /></param>
+        /// <param name="obj">
+        ///     Object to be reflected, its estimated reprasentation will be saved in <see cref="ReflectedInfo" />
+        /// </param>
         public Reflectotron(object obj) : this(obj, 0)
         {
-
         }
 
         private Reflectotron(object obj, int indent)
@@ -59,9 +62,9 @@ namespace Reflex
             var T = obj.GetType();
 
             var clMgr = new ClassManager(T.Namespace); //manages class names and namespaces
-            var ignoredMembers = new List<string>();//list of members to be ignored (obviously)
+            var ignoredMembers = new List<string>(); //list of members to be ignored (obviously)
             Indent = "";
-            for (int i = 0; i < indent; i++)
+            for (var i = 0; i < indent; i++)
             {
                 Indent += " ";
             }
@@ -105,34 +108,32 @@ namespace Reflex
 
             #region enums
 
-            List<Type> enums = T.GetNestedTypes().Where(q => q.IsEnum).ToList();
+            var enums = T.GetNestedTypes().Where(q => q.IsEnum).ToList();
             if (enums.Any())
             {
                 foreach (var @enum in enums)
                 {
-                    string mod = @enum.IsPublic ? "public" : "private";
+                    var mod = @enum.IsPublic ? "public" : "private";
                     sb.AppendLine($"{Indent}    {mod} enum {ClassManager.TrimTypeName(@enum.Name)}");
                     sb.AppendLine($"{Indent}    {{");
                     foreach (var enumName in @enum.GetEnumNames())
                     {
-                        MemberInfo info = @enum.GetMember(enumName)[0];
-                        Attributes attrib = new Attributes(info.GetCustomAttributes(), clMgr, 6);
+                        var info = @enum.GetMember(enumName)[0];
+                        var attrib = new Attributes(info.GetCustomAttributes(), clMgr, 6);
                         if (attrib.ToString() != "")
-                            sb.Append(attrib.ToString());
+                            sb.Append(attrib);
                         sb.AppendLine($"{Indent}      {enumName},");
                     }
                     sb.AppendLine($"{Indent}    }}");
                 }
+                sb.AppendLine();
             }
-
 
             #endregion
 
-            sb.AppendLine();
-
             #region properties, indexers
 
-            List<PropertyInfo> properties = T.GetProperties(AllBindingFlags).ToList();
+            var properties = T.GetProperties(AllBindingFlags).ToList();
 
             if (properties.Any())
             {
@@ -141,7 +142,7 @@ namespace Reflex
                 foreach (var property in properties)
                 {
                     var attrs = new Attributes(property.GetCustomAttributes(), clMgr, 4 + Indent.Length);
-                    var name = property.Name;//to be edited for indexer
+                    var name = property.Name; //to be edited for indexer
 
                     sb.Append(attrs);
                     sb.Append($"{Indent}    ");
@@ -186,15 +187,15 @@ namespace Reflex
 
                     #endregion
 
-                    string type = clMgr.WriteReturnType(property.PropertyType, T,
+                    var type = clMgr.WriteReturnType(property.PropertyType, T,
                         q => q.GetProperty(property.Name, AllBindingFlags).PropertyType);
-                    bool isSpecial = false;
+                    var isSpecial = false;
 
                     #region generic property type
 
                     if (T.IsGenericType) //may be a property with generic type
                     {
-                        Type genProp = T.GetGenericTypeDefinition().GetProperty(property.Name).PropertyType;
+                        var genProp = T.GetGenericTypeDefinition().GetProperty(property.Name).PropertyType;
                         if (genProp.IsGenericParameter)
                         {
                             isSpecial = true;
@@ -211,13 +212,13 @@ namespace Reflex
 
                         var setter = property.GetSetMethod(true);
                         var getter = property.GetGetMethod(true);
-                        string parameters = ""; //there will always be at least 1 accessor and parameter
+                        var parameters = ""; //there will always be at least 1 accessor and parameter
 
                         if (setter != null) //has setter
                         {
                             var par = setter.GetParameters().ToList();
-                            if(par.Any())//this should be always true but better safe than sorry
-                                par.RemoveAt(par.Count-1);//the last is value parameter
+                            if (par.Any()) //this should be always true but better safe than sorry
+                                par.RemoveAt(par.Count - 1); //the last is value parameter
 
                             parameters = ProcessParameters(par, clMgr);
                         }
@@ -229,7 +230,6 @@ namespace Reflex
                     }
 
                     #endregion
-
 
                     if (property.GetIndexParameters().Any())
                         Debug.WriteLine(property.Name);
@@ -250,7 +250,7 @@ namespace Reflex
 
                     if (!isSpecial && !property.IsSpecialName)
                     {
-                        string value = GetMemberValue(property, obj);
+                        var value = GetMemberValue(property, obj);
                         if (value != "")
                         {
                             sb.Append($" = {value};");
@@ -265,7 +265,6 @@ namespace Reflex
 
             #endregion
 
-
             #region events
 
             if (T.GetEvents(AllBindingFlags).Any())
@@ -274,7 +273,8 @@ namespace Reflex
                 foreach (var @event in T.GetEvents())
                 {
                     sb.Append($"{Indent}    ");
-                    sb.Append($"public event {clMgr.WriteReturnType(@event.EventHandlerType, T, q => q.GetEvent(@event.Name).EventHandlerType)} {@event.Name};");
+                    sb.Append(
+                        $"public event {clMgr.WriteReturnType(@event.EventHandlerType, T, q => q.GetEvent(@event.Name).EventHandlerType)} {@event.Name};");
                     //no way to get a proper access modifier
                     sb.AppendLine();
                     ignoredMembers.Add($"add_{@event.Name}");
@@ -287,31 +287,27 @@ namespace Reflex
 
             #endregion
 
-
             #region fields
 
-            if (T.GetFields(AllBindingFlags).Any())
+            var fields = T.GetFields(AllBindingFlags).Where(q => !ignoredMembers.Contains(q.Name))
+                .Where(q => q.Name.IndexOf('<') != 0).ToList();
+            if (fields.Any())
             {
                 sb.AppendLine("#region fields");
-                foreach (var field in T.GetFields(AllBindingFlags).Where(q => !ignoredMembers.Contains(q.Name)))
+                foreach (var field in fields)
                 {
-                    var name = field.Name;
-                    if (name.IndexOf('<') == 0) //backing field for auto-property => ignore
-                    {
-                        continue;
-                    }
-
                     var attrs = new Attributes(field.GetCustomAttributes(), clMgr, 4);
                     sb.Append(attrs);
 
                     sb.Append($"{Indent}    ");
                     var mods = new AccessModifiers(field);
                     sb.Append(
+                        // ReSharper disable once PossibleNullReferenceException
                         $"{mods}{clMgr.WriteReturnType(field.FieldType, T, q => q.GetField(field.Name, AllBindingFlags).FieldType)} {field.Name}");
 
                     #region value
 
-                    string value = GetMemberValue(field, obj);
+                    var value = GetMemberValue(field, obj);
                     if (value != "")
                     {
                         sb.Append($" = {value}");
@@ -327,7 +323,6 @@ namespace Reflex
 
             #endregion
 
-
             #region constructors
 
             sb.AppendLine("#region constructors");
@@ -340,12 +335,11 @@ namespace Reflex
             sb.AppendLine("#endregion");
 
             #endregion
-
             sb.AppendLine();
 
             #region methods
 
-            List<MethodInfo> methods = T.GetMethods(AllBindingFlags)
+            var methods = T.GetMethods(AllBindingFlags)
                 .Where(q => !ignoredMembers.Contains(q.Name)).ToList();
             if (methods.Any())
             {
@@ -358,7 +352,6 @@ namespace Reflex
                     if (method.IsSpecialName) //auto-generated method
                     {
                         #region operators, conversions
-
 
                         if (method.Name.IndexOf("op_", StringComparison.Ordinal) == 0) //operators have prefix "op_"
                         {
@@ -425,7 +418,7 @@ namespace Reflex
 
                     #endregion
 
-                    sb.AppendLine($"({ProcessParameters(method.GetParameters(), clMgr)}){{}}");
+                    sb.AppendLine($"({ProcessParameters(method.GetParameters(), clMgr)});");
                 }
                 sb.AppendLine("#endregion");
                 sb.AppendLine();
@@ -433,12 +426,17 @@ namespace Reflex
 
             #endregion
 
-            sb.AppendLine($"{Indent}  }}");//class
-            sb.AppendLine($"{Indent}}}");//namespace
+            sb.AppendLine($"{Indent}  }}"); //class
+            sb.AppendLine($"{Indent}}}"); //namespace
 
             ReflectNoUsings = sb.ToString();
             Usings = clMgr.Usings;
         }
+
+        /// <summary>
+        ///     Indentation at the beginning of most lines. Intended for future use.
+        /// </summary>
+        public string Indent { get; }
 
         /// <summary>
         ///     Estimated representation of object given to constructor
@@ -446,12 +444,12 @@ namespace Reflex
         public string ReflectedInfo => $"{Usings}{Environment.NewLine}{ReflectNoUsings}";
 
         /// <summary>
-        /// Using directives for reflected type
+        ///     Using directives for reflected type
         /// </summary>
         public string Usings { get; }
 
         /// <summary>
-        /// Estimated class structure without using directives
+        ///     Estimated class structure without using directives
         /// </summary>
         public string ReflectNoUsings { get; }
 
@@ -470,7 +468,8 @@ namespace Reflex
             {
                 var param = parameterInfos.ElementAt(i);
 
-                var attrs = new Attributes(param.GetCustomAttributes(), mgr, 0);//yep, even parameters may have attributes
+                var attrs = new Attributes(param.GetCustomAttributes(), mgr, 0);
+                //yep, even parameters may have attributes
                 if (attrs.Any())
                 {
                     var a = attrs.ToString();
@@ -547,7 +546,7 @@ namespace Reflex
         }
 
         /// <summary>
-        /// Get a string representation of value of something
+        ///     Get a string representation of value of something
         /// </summary>
         /// <param name="member">property, field etc.</param>
         /// <param name="reflectedType"></param>
@@ -601,8 +600,8 @@ namespace Reflex
         #region helper classes
 
         /// <summary>
-        /// Self explaining, right?
-        /// Has useful constructors and Tostring
+        ///     Self explaining, right?
+        ///     Has useful constructors and Tostring
         /// </summary>
         private class AccessModifiers : List<EKeyWords>
         {
@@ -651,6 +650,11 @@ namespace Reflex
                     Add(EKeyWords.Static);
                 if (field.IsInitOnly)
                     Add(EKeyWords.Readonly);
+                else if (field.IsLiteral)
+                {
+                    Add(EKeyWords.Const);
+                    Remove(EKeyWords.Static);
+                }
             }
 
             public AccessModifiers(ConstructorInfo info)
@@ -709,7 +713,7 @@ namespace Reflex
         }
 
         /// <summary>
-        /// Represents attribues, surprisingly. Useful constructor
+        ///     Represents attribues, surprisingly. Useful constructor
         /// </summary>
         private class Attributes : List<object>
         {
@@ -734,30 +738,31 @@ namespace Reflex
                 if (!this.Any())
                     return "";
 
-                List<string> lines = new List<string>();
+                var lines = new List<string>();
                 foreach (var attribute in this)
                 {
                     var T = attribute.GetType();
 
-                    Dictionary<string, string> props = new Dictionary<string, string>();//property,value
-                    object def;//default instance to match properties with
+                    var props = new Dictionary<string, string>(); //property,value
+                    object def; //default instance to match properties with
                     try
                     {
                         def = Activator.CreateInstance(T);
                     }
                     catch
                     {
-                        def = null;//no parameterless constructor
+                        def = null; //no parameterless constructor
                     }
 
                     foreach (var property in T.GetProperties().TakeWhile(property => def != null))
                     {
                         try
                         {
-                            if (property.GetValue(attribute).Equals(property.GetValue(def)))//the property's value is not default
+                            if (property.GetValue(attribute).Equals(property.GetValue(def)))
+                                //the property's value is not default
                                 continue;
 
-                            string value = GetMemberValue(property, attribute);
+                            var value = GetMemberValue(property, attribute);
 
                             if (value != "")
                             {
@@ -770,8 +775,8 @@ namespace Reflex
                         }
                     }
 
-                    StringBuilder line = new StringBuilder($"{_indent}[{_classManager.Write(T, true)}");
-                    if (props.Any())//some properties have not default values                        
+                    var line = new StringBuilder($"{_indent}[{_classManager.Write(T, true)}");
+                    if (props.Any()) //some properties have not default values                        
                     {
                         line.Append("(");
                         line.Append(string.Join(", ", props.Select(q => $"{q.Key} = {q.Value}")));
