@@ -2,7 +2,6 @@
 
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Linq;
 using System.Reflection;
 using System.Runtime.CompilerServices;
@@ -45,21 +44,55 @@ namespace Reflex
             BindingFlags.Static | BindingFlags.DeclaredOnly;
 
         /// <summary>
-        ///     Instatializes a new <see cref="Reflectotron" /> class.
+        ///     Instatializes a new <see cref="Reflectotron" /> class from an instance
         /// </summary>
         /// <param name="obj">
         ///     Object to be reflected, its estimated reprasentation will be saved in <see cref="ReflectedInfo" />
         /// </param>
-        public Reflectotron(object obj) : this(obj, 0)
-        {
-        }
-
-        private Reflectotron(object obj, int indent)
+        public Reflectotron(object obj)
         {
             if (obj == null) throw new ArgumentNullException(nameof(obj));
+            Reflect(obj.GetType(), obj, 0);
+        }
 
+        /// <summary>
+        ///     Instatializes a new <see cref="Reflectotron" /> class from a static class type
+        /// </summary>
+        /// <param name="T">Type of the static class. Use typeof() operator</param>
+        public Reflectotron(Type T)
+        {
+            Reflect(T, null, 0);
+        }
+
+        /// <summary>
+        ///     Indentation at the beginning of most lines. Intended for future use.
+        /// </summary>
+        public string Indent { get; private set; }
+
+        /// <summary>
+        ///     Estimated representation of object given to constructor
+        /// </summary>
+        public string ReflectedInfo => $"{Usings}{Environment.NewLine}{ReflectNoUsings}";
+
+        /// <summary>
+        ///     Using directives for reflected type
+        /// </summary>
+        public string Usings { get; private set; }
+
+        /// <summary>
+        ///     Estimated class structure without using directives
+        /// </summary>
+        public string ReflectNoUsings { get; private set; }
+
+        /// <summary>
+        ///     Processes a given type with respect to object into <see cref="ReflectedInfo" />
+        /// </summary>
+        /// <param name="T">Type to reflect</param>
+        /// <param name="obj">Object whose properies' values should be used</param>
+        /// <param name="indent">Indentation. 0 is default</param>
+        private void Reflect(Type T, object obj, int indent)
+        {
             var sb = new StringBuilder();
-            var T = obj.GetType();
 
             var clMgr = new ClassManager(T.Namespace); //manages class names and namespaces
             var ignoredMembers = new List<string>(); //list of members to be ignored (obviously)
@@ -87,8 +120,8 @@ namespace Reflex
 
             var ancestors = new List<string>();
 
-            if ((T.BaseType != null) && (T.BaseType != typeof(object)))
-            //inherits from something else than only object class
+            if ((T.BaseType != null) && (T.BaseType != typeof (object)))
+                //inherits from something else than only object class
             {
                 ancestors.Add(clMgr.Write(T.BaseType, true));
             }
@@ -150,10 +183,10 @@ namespace Reflex
                     #region access modifiers for getters and setters
 
                     var getterInfos =
-                        property.GetAccessors(true).Where(a => a.ReturnType != typeof(void)).ToArray();
+                        property.GetAccessors(true).Where(a => a.ReturnType != typeof (void)).ToArray();
                     //setters don't have return types
                     var setterInfos =
-                        property.GetAccessors(true).Where(a => a.ReturnType == typeof(void)).ToArray(); //getters do
+                        property.GetAccessors(true).Where(a => a.ReturnType == typeof (void)).ToArray(); //getters do
 
                     var setterMods = new AccessModifiers(setterInfos);
                     var getterMods = new AccessModifiers(getterInfos);
@@ -230,9 +263,6 @@ namespace Reflex
                     }
 
                     #endregion
-
-                    if (property.GetIndexParameters().Any())
-                        Debug.WriteLine(property.Name);
 
                     sb.Append($"{commonModifiers}{type} {name} {{ ");
 
@@ -325,17 +355,21 @@ namespace Reflex
 
             #region constructors
 
-            sb.AppendLine("#region constructors");
-            foreach (var constructor in T.GetConstructors(AllBindingFlags))
+            var constructors = T.GetConstructors(AllBindingFlags);
+            if (constructors.Any())
             {
-                var mods = new AccessModifiers(constructor);
-                sb.AppendLine(
-                    $"{Indent}    {mods}{ClassManager.TrimTypeName(T.Name)}({ProcessParameters(constructor.GetParameters(), clMgr)});");
+                sb.AppendLine("#region constructors");
+                foreach (var constructor in constructors)
+                {
+                    var mods = new AccessModifiers(constructor);
+                    sb.AppendLine(
+                        $"{Indent}    {mods}{ClassManager.TrimTypeName(T.Name)}({ProcessParameters(constructor.GetParameters(), clMgr)});");
+                }
+                sb.AppendLine("#endregion");
+                sb.AppendLine();
             }
-            sb.AppendLine("#endregion");
 
             #endregion
-            sb.AppendLine();
 
             #region methods
 
@@ -348,6 +382,16 @@ namespace Reflex
                 {
                     var mods = new AccessModifiers(method);
                     var name = method.Name; //name to be used. is edited for the advanced stuff
+                    var parametersPrefix = ""; //changes for extension methods to "this "
+
+                    var attrsRaw = method.GetCustomAttributes().ToList();
+                    if (attrsRaw.Any(q => q is ExtensionAttribute))
+                    {
+                        attrsRaw.RemoveAll(q => q is ExtensionAttribute);
+                        parametersPrefix = method.GetParameters().Any() ? "this " : "";
+                    }
+
+                    var attrs = new Attributes(attrsRaw, clMgr, indent + 4);
 
                     if (method.IsSpecialName) //auto-generated method
                     {
@@ -381,6 +425,7 @@ namespace Reflex
                         #endregion
                     }
 
+
                     foreach (var @interface in interfaces) //no virtual keywords for methods implemented by interface
                         if (@interface.GetMethods().Any(q => MethodsEqual(q, method)))
                             //this method is implemented from inetrface                            
@@ -388,12 +433,12 @@ namespace Reflex
 
                     #region async methods
 
-                    var asyncAttribType = typeof(AsyncStateMachineAttribute); //async methods have these
+                    var asyncAttribType = typeof (AsyncStateMachineAttribute); //async methods have these
                     var asyncAttrib = method.GetCustomAttribute(asyncAttribType) as AsyncStateMachineAttribute;
                     if (asyncAttrib != null)
                         mods.Add(EKeyWords.Async); //it is async
 
-                    if ((method.Name.IndexOf('<') == 0) && (method.ReturnType == typeof(int)))
+                    if ((method.Name.IndexOf('<') == 0) && (method.ReturnType == typeof (int)))
                         //async helper method, auto generated                    
                         if (T.GetMethods(BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public)
                             .Any(m => method.Name.IndexOf(m.Name, StringComparison.Ordinal) == 1))
@@ -402,7 +447,7 @@ namespace Reflex
 
                     #endregion
 
-                    sb.Append($"{Indent}    ");
+                    sb.Append($"{attrs}{Indent}    ");
                     sb.Append(mods);
                     sb.Append(
                         $"{clMgr.WriteReturnType(method.ReturnType, T, q => q.GetMethod(method.Name, AllBindingFlags).ReturnType)} {name}");
@@ -418,7 +463,7 @@ namespace Reflex
 
                     #endregion
 
-                    sb.AppendLine($"({ProcessParameters(method.GetParameters(), clMgr)});");
+                    sb.AppendLine($"({parametersPrefix}{ProcessParameters(method.GetParameters(), clMgr)});");
                 }
                 sb.AppendLine("#endregion");
                 sb.AppendLine();
@@ -432,26 +477,6 @@ namespace Reflex
             ReflectNoUsings = sb.ToString();
             Usings = clMgr.Usings;
         }
-
-        /// <summary>
-        ///     Indentation at the beginning of most lines. Intended for future use.
-        /// </summary>
-        public string Indent { get; }
-
-        /// <summary>
-        ///     Estimated representation of object given to constructor
-        /// </summary>
-        public string ReflectedInfo => $"{Usings}{Environment.NewLine}{ReflectNoUsings}";
-
-        /// <summary>
-        ///     Using directives for reflected type
-        /// </summary>
-        public string Usings { get; }
-
-        /// <summary>
-        ///     Estimated class structure without using directives
-        /// </summary>
-        public string ReflectNoUsings { get; }
 
         /// <summary>
         ///     Process parameters into string without parenthess
@@ -494,11 +519,11 @@ namespace Reflex
                 if (param.IsOptional)
                 {
                     var val = "null";
-                    if (param.ParameterType == typeof(int))
+                    if (param.ParameterType == typeof (int))
                     {
                         val = param.RawDefaultValue.ToString();
                     }
-                    else if (param.ParameterType == typeof(string))
+                    else if (param.ParameterType == typeof (string))
                     {
                         val = "\"" + param.RawDefaultValue + "\"";
                     }
@@ -539,14 +564,14 @@ namespace Reflex
         /// <returns></returns>
         private static bool InterfaceFilter(Type typeObj, object criteriaObj)
         {
-            var baseClassType = (Type)criteriaObj;
+            var baseClassType = (Type) criteriaObj;
             // Obtain an array of the interfaces supported by the base class
             var interfacesArray = baseClassType.GetInterfaces();
             return interfacesArray.All(t => typeObj.ToString() != t.ToString());
         }
 
         /// <summary>
-        ///     Get a string representation of value of something
+        ///     Get a string representation of value of something. Returns an empty string for unknown types or default values
         /// </summary>
         /// <param name="member">property, field etc.</param>
         /// <param name="reflectedType"></param>
@@ -574,20 +599,20 @@ namespace Reflex
                     return "";
                 }
 
-                Type[] numberTypes = { typeof(int), typeof(long), typeof(short), typeof(sbyte) };
+                Type[] numberTypes = {typeof (int), typeof (long), typeof (short), typeof (sbyte)};
                 if (numberTypes.Contains(memberType))
                 {
                     if (value.ToString() != "0")
                         return value.ToString();
                 }
-                else if (memberType == typeof(string))
+                else if (memberType == typeof (string))
                 {
                     if (value.ToString() != "")
                         return $"\"{value}\"";
                 }
-                else if (memberType == typeof(bool))
+                else if (memberType == typeof (bool))
                 {
-                    return (bool)value ? "true" : "false";
+                    return (bool) value ? "true" : "false";
                 }
                 return "";
             }
@@ -631,7 +656,7 @@ namespace Reflex
                 }
             }
 
-            public AccessModifiers(MethodInfo info) : this(new[] { info })
+            public AccessModifiers(MethodInfo info) : this(new[] {info})
             {
             }
 
@@ -689,10 +714,14 @@ namespace Reflex
                     Add(EKeyWords.Public);
                 if (info.IsAbstract)
                     Add(EKeyWords.Abstract);
-                if (info.IsAbstract && info.IsSealed)
-                    Add(EKeyWords.Static);
                 if (info.IsSealed)
                     Add(EKeyWords.Sealed);
+                if (info.IsAbstract && info.IsSealed)
+                {
+                    Add(EKeyWords.Static);
+                    Remove(EKeyWords.Abstract);
+                    Remove(EKeyWords.Sealed);
+                }
             }
 
             public AccessModifiers()
@@ -733,6 +762,25 @@ namespace Reflex
                 }
             }
 
+            /// <summary>
+            ///     name of properties whose names partialy match parameter's name
+            /// </summary>
+            /// <param name="cons">Construcor whose parameters should be matched</param>
+            /// <param name="T">type that has the properties desired</param>
+            /// <returns></returns>
+            private static IEnumerable<string> PropsMatchingParams(ConstructorInfo cons, Type T)
+            {
+                return cons.GetParameters()
+                    .Where(par => T.GetProperties()
+                        .Any(property =>
+                            string.Equals(property.Name, par.Name, StringComparison.CurrentCultureIgnoreCase) &&
+                            //case-insensitive name match
+                            (property.PropertyType == par.ParameterType))) //type match
+                    .Select(param => T.GetProperties().First(property =>
+                        string.Equals(property.Name, param.Name, StringComparison.CurrentCultureIgnoreCase)).Name);
+                    //select property's name
+            }
+
             public override string ToString()
             {
                 if (!this.Any())
@@ -743,30 +791,37 @@ namespace Reflex
                 {
                     var T = attribute.GetType();
 
-                    var props = new Dictionary<string, string>(); //property,value
-                    object def; //default instance to match properties with
-                    try
-                    {
-                        def = Activator.CreateInstance(T);
-                    }
-                    catch
-                    {
-                        def = null; //no parameterless constructor
-                    }
+                    var line = new StringBuilder($"{_indent}[{_classManager.Write(T, true)}");
 
-                    foreach (var property in T.GetProperties().TakeWhile(property => def != null))
+                    if (T.HasParamlessConstructor()) //parameterless constructor is needed to
                     {
                         try
                         {
-                            if (property.GetValue(attribute).Equals(property.GetValue(def)))
-                                //the property's value is not default
-                                continue;
+                            var props = new Dictionary<string, string>();
+                                //property,value; which don't have default values
+                            var def = Activator.CreateInstance(T);
 
-                            var value = GetMemberValue(property, attribute);
-
-                            if (value != "")
+                            if (def != null)
                             {
-                                props.Add(property.Name, value);
+                                foreach (var property in T.GetProperties())
+                                {
+                                    if (property.GetValue(attribute).Equals(property.GetValue(def)))
+                                        //the property's value is not default
+                                        continue;
+
+                                    var value = GetMemberValue(property, attribute);
+
+                                    if (string.IsNullOrEmpty(value))
+                                    {
+                                        props.Add(property.Name, value);
+                                    }
+                                }
+                            }
+                            if (props.Any()) //some properties have not default values                        
+                            {
+                                line.Append("(");
+                                line.Append(string.Join(", ", props.Select(q => $"{q.Key} = {q.Value}")));
+                                line.Append(")");
                             }
                         }
                         catch
@@ -774,14 +829,45 @@ namespace Reflex
                             //ignore
                         }
                     }
-
-                    var line = new StringBuilder($"{_indent}[{_classManager.Write(T, true)}");
-                    if (props.Any()) //some properties have not default values                        
+                    else //has parametrized constructors only
                     {
-                        line.Append("(");
-                        line.Append(string.Join(", ", props.Select(q => $"{q.Key} = {q.Value}")));
-                        line.Append(")");
+                        var matchingProps = new Dictionary<ConstructorInfo, int>();
+                            //constr, number of matching properties
+                        //constructors whose parameters match some properties
+                        foreach (var constructor in T.GetConstructors())
+                        {
+                            var match = //number of parametrs whose names matches attribute's properties
+                                PropsMatchingParams(constructor, T).Count();
+                            if (match > 0)
+                                matchingProps.Add(constructor, match);
+                        }
+                        if (matchingProps.Any())
+                        {
+                            var bestConstr = matchingProps.OrderByDescending(q => q.Value).First().Key;
+                            var paramPropNames = PropsMatchingParams(bestConstr, T).ToList();
+                            //list of properties' names to be assigned as constructor params
+                            var values =
+                                paramPropNames.Select(param => GetMemberValue(T.GetProperty(param), attribute)).ToList();
+                            //list of values of parameters
+                            line.Append($"({string.Join(", ", values)}");
+
+                            var otherProperties =
+                                T.GetProperties().Where(q => !paramPropNames.Contains(q.Name)).ToList();
+                            //properties which haven't been assigned in constructor
+
+                            foreach (var property in otherProperties)
+                            {
+                                var value = GetMemberValue(property, attribute);
+                                if (!string.IsNullOrEmpty(value)) //not default value
+                                {
+                                    line.Append($", {property.Name}={value}");
+                                }
+                            }
+
+                            line.Append(")");
+                        }
                     }
+
                     line.Append("]");
                     lines.Add(line.ToString());
                 }
